@@ -190,10 +190,9 @@ var CenterModel = function(row) {
 * ゴミのカテゴリを管理するクラスです。
 * description.csvのモデルです。
 */
-var DescriptionModel = function(row) {
+var DescriptionModel = function(data) {
   this.targets = new Array();
 
-  var data = row.split(",");
   this.label = data[0];
   this.sublabel = data[1];//not used
   this.description = data[2];//not used
@@ -204,8 +203,7 @@ var DescriptionModel = function(row) {
  * ゴミのカテゴリの中のゴミの具体的なリストを管理するクラスです。
  * target.csvのモデルです。
  */
-var TargetRowModel = function(row) {
-  var data = row.split(",");
+var TargetRowModel = function(data) {
   this.type = data[0];
   this.name = data[1];
   this.notice = data[2];
@@ -231,39 +229,48 @@ $(function() {
     localStorage.setItem("selected_area_name", name);
   }
 
-  function updateAreaList() {
-    $.get("data/area_days.csv", function(csvdata) {
+  function csvToArray(filename, cb) {
+    $.get(filename, function(csvdata) {
       //CSVのパース作業
-      var csvdata = csvdata.replace("\r/gm", "");
-      var tmp = csvdata.split("\n");
-      //行ごとに解析を行う。
-      //shiftは先頭のラベル行のみ除去するため
-      //各行は [地域名],[ゴミ処理場],[燃やすゴミ],[燃えないごみ],[資源],[びん]
-      //という想定です。
-      var area_days_label = tmp.shift().split(",");
+      var csvdata = csvdata.replace(/\r/gm, ""),
+          line = csvdata.split("\n"),
+          ret = [];
+      for (var i in line) {
+        //空行はスルーする。
+        if (line[i].length == 0) continue;
+
+        var row = line[i].split(",");
+        ret.push(row);
+      }
+      cb(ret);
+    });
+  }
+
+  function updateAreaList() {
+    csvToArray("data/area_days.csv", function(tmp) {
+      var area_days_label = tmp.shift();
       for (var i in tmp) {
-        var row = tmp[i].split(",");
+        var row = tmp[i];
         var area = new AreaModel();
         area.label = row[0];
         area.centerName = row[1];
 
         areaModels.push(area);
         //２列目以降の処理
-        for (var i = 2; i < 2 + 4; i++) {
-          var trash = new TrashModel(area_days_label[i], row[i]);
+        for (var r = 2; r < 2 + 4; r++) {
+          var trash = new TrashModel(area_days_label[r], row[r]);
           area.trash.push(trash);
         }
       }
 
-      $.get("data/center.csv", function(tmp_center_data) {
+      csvToArray("data/center.csv", function(tmp) {
         //ゴミ処理センターのデータを解析します。
         //表示上は現れませんが、
         //金沢などの各処理センターの休止期間分は一週間ずらすという法則性のため
         //例えば第一金曜日のときは、一周ずらしその月だけ第二金曜日にする
-        var tmp = tmp_center_data.split("\n");
         tmp.shift();
         for (var i in tmp) {
-          var row = tmp[i].split(",");
+          var row = tmp[i];
 
           var center = new CenterModel(row);
           center_data.push(center);
@@ -299,26 +306,16 @@ $(function() {
 
 
   function createMenuList(after_action) {
-    $.get("data/description.csv", function(csv_data) {
-      var data = csv_data.split("\n");
+    csvToArray("data/description.csv", function(data) {
       data.shift();
       for (var i in data) {
-        if (data[i].length == 0) {
-          //空データはスルーする。
-          continue;
-        }
         descriptions.push(new DescriptionModel(data[i]));
       }
 
-      $.get("data/target.csv", function(csv_data) {
+      csvToArray("data/target.csv", function(data) {
 
-        var data = csv_data.split("\n");
         data.shift();
         for (var i in data) {
-          if (data[i].length == 0) {
-            //空データはスルーする。
-            continue;
-          }
           var row = new TargetRowModel(data[i]);
           for (var j = 0; j < descriptions.length; j++) {
             //一致してるものに追加する。
@@ -342,6 +339,7 @@ $(function() {
     //TODO Android 2.3以下では見れない（代替の表示も含め）不具合が改善されてない。。
     //参考 http://satussy.blogspot.jp/2011/12/javascript-svg.html
     var ableSVG = (window.SVGAngle !== void 0);
+    ableSVG=false
     var areaModel = areaModels[row_index];
     var today = new Date();
     //直近の一番近い日付を計算します。
@@ -358,8 +356,9 @@ $(function() {
 
       for (var d_no in descriptions) {
         var description = descriptions[d_no];
-
-        if (description.label == trash.label) {
+        if (description.label != trash.label) {
+        	continue;
+        }
 
           var target_tag = "";
           var furigana = "";
@@ -419,7 +418,6 @@ $(function() {
             '<div class="targetDays"></div></div>' +
             "</div>" +
             "</div>";
-        }
       }
     }
 
