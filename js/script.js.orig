@@ -322,11 +322,16 @@ $(function() {
   function csvToArray(filename, cb) {
     $.get(filename, function(csvdata) {
       //CSVのパース作業
+<<<<<<< HEAD
+      var csvdata = csvdata.replace(/\r/gm, ""),
+          line = csvdata.split("\n"),
+=======
       //CRの解析ミスがあった箇所を修正しました。
       //以前のコードだとCRが残ったままになります。
       // var csvdata = csvdata.replace("\r/gm", ""),
        csvdata = csvdata.replace(/\r/gm, "");
       var line = csvdata.split("\n"),
+>>>>>>> upstream/master
           ret = [];
       for (var i in line) {
         //空行はスルーする。
@@ -350,11 +355,17 @@ $(function() {
 
         areaModels.push(area);
         //２列目以降の処理
+<<<<<<< HEAD
+        for (var r = 2; r < 2 + 4; r++) {
+          var trash = new TrashModel(area_days_label[r], row[r]);
+          area.trash.push(trash);
+=======
         for (var r = 2; r < 2 + MaxDescription; r++) {
           if (area_days_label[r]) {
             var trash = new TrashModel(area_days_label[r], row[r], remarks);
             area.trash.push(trash);
           }
+>>>>>>> upstream/master
         }
       }
 
@@ -401,6 +412,8 @@ $(function() {
 
 
   function createMenuList(after_action) {
+<<<<<<< HEAD
+=======
     // 備考データを読み込む
     csvToArray("data/remarks.csv", function(data) {
       data.shift();
@@ -408,6 +421,7 @@ $(function() {
         remarks.push(new RemarkModel(data[i]));
       }
     });
+>>>>>>> upstream/master
     csvToArray("data/description.csv", function(data) {
       data.shift();
       for (var i in data) {
@@ -441,7 +455,11 @@ $(function() {
     //TODO Android 2.3以下では見れない（代替の表示も含め）不具合が改善されてない。。
     //参考 http://satussy.blogspot.jp/2011/12/javascript-svg.html
     var ableSVG = (window.SVGAngle !== void 0);
+<<<<<<< HEAD
+    ableSVG=false
+=======
     //var ableSVG = false;  // SVG未使用の場合、descriptionの1項目目を使用
+>>>>>>> upstream/master
     var areaModel = areaModels[row_index];
     var today = new Date();
     //直近の一番近い日付を計算します。
@@ -462,8 +480,13 @@ $(function() {
 
       for (var d_no in descriptions) {
         var description = descriptions[d_no];
+<<<<<<< HEAD
+        if (description.label != trash.label) {
+        	continue;
+=======
        if (description.label != trash.label) {
           continue;
+>>>>>>> upstream/master
         }
 
           var target_tag = "";
