@@ -56,13 +56,27 @@ var AreaModel = function() {
 /**
   各ゴミのカテゴリを管理するクラスです。
 */
-var TrashModel = function(_lable, _cell) {
+var TrashModel = function(_lable, _cell, remarks) {
+  this.remarks = remarks;
   this.dayLabel;
   this.mostRecent;
   this.dayList;
-  this.dayCell = _cell.split(" ");
+  this.mflag = new Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  var monthSplitFlag=_cell.search(/:/)>=0
+  if (monthSplitFlag) {
+    var flag = _cell.split(":");
+    this.dayCell = flag[0].split(" ");
+    var mm = flag[1].split(" ");
+  } else {
+    this.dayCell = _cell.split(" ");
+    var mm = new Array("4", "5", "6", "7", "8", "9", "10", "11", "12", "1", "2", "3");
+  }
+  for (var m in mm) {
+    this.mflag[mm[m] - 1] = 1;
+  }
   this.label = _lable;
   this.description;
+  this.regularFlg = 1;      // 定期回収フラグ（デフォルトはオン:1）
 
   var result_text = "";
   var today = new Date();
@@ -70,15 +84,35 @@ var TrashModel = function(_lable, _cell) {
   for (var j in this.dayCell) {
     if (this.dayCell[j].length == 1) {
       result_text += "毎週" + this.dayCell[j] + "曜日 ";
-    } else {
+    } else if (this.dayCell[j].length == 2 && this.dayCell[j].substr(0,1) != "*") {
       result_text += "第" + this.dayCell[j].charAt(1) + this.dayCell[j].charAt(0) + "曜日 ";
+    } else if (this.dayCell[j].length == 2 && this.dayCell[j].substr(0,1) == "*") {
+    } else {
+      // 不定期回収の場合（YYYYMMDD指定）
+      result_text = "不定期 ";
+      this.regularFlg = 0;  // 定期回収フラグオフ
     }
+  }
+  if (monthSplitFlag){
+    var monthList="";
+    for (var m in this.mflag) {
+      if (this.mflag[m]){
+        if (monthList.length>0){
+          monthList+=","
+        }
+        //mを整数化
+        monthList+=((m-0)+1)
+      }
+    };
+    monthList+="月 "
+    result_text=monthList+result_text
   }
   this.dayLabel = result_text;
 
+
   this.getDateLabel = function() {
     var result_text = this.mostRecent.getFullYear() + "/" + (1 + this.mostRecent.getMonth()) + "/" + this.mostRecent.getDate();
-    return this.dayLabel + " " + result_text;
+    return this.getRemark() + this.dayLabel + " " + result_text;
   }
 
   var day_enum = ["日", "月", "火", "水", "木", "金", "土"];
@@ -92,6 +126,22 @@ var TrashModel = function(_lable, _cell) {
     return -1;
   }
   /**
+   * このごみ収集日が特殊な条件を持っている場合備考を返します。収集日データに"*n" が入っている場合に利用されます
+   */
+  this.getRemark = function getRemark() {
+    var ret = "";
+    this.dayCell.forEach(function(day){
+      if (day.substr(0,1) == "*") {
+        remarks.forEach(function(remark){
+          if (remark.id == day.substr(1,1)){
+            ret += remark.text + "<br/>";
+          }
+        });
+      };
+    });
+    return ret;
+  }
+  /**
   このゴミの年間のゴミの日を計算します。
   センターが休止期間がある場合は、その期間１週間ずらすという実装を行っております。
 */
@@ -99,44 +149,73 @@ var TrashModel = function(_lable, _cell) {
     var day_mix = this.dayCell;
     var result_text = "";
     var day_list = new Array();
-    // 12月 +3月　を表現
-    for (var month = 4; month <= 12 + 3; month++) {
-      for (var j in day_mix) {
-        //休止期間だったら、今後一週間ずらす。 
-        var isShift = false;
 
-        //week=0が第1週目です。
-        for (var week = 0; week < 5; week++) {
-          //4月1日を起点として第n曜日などを計算する。
-          var date = new Date(2013, month - 1, 1);
-          var d = new Date(date);
-          //コンストラクタでやろうとするとうまく行かなかった。。
-          //
-          //4月1日を基準にして曜日の差分で時間を戻し、最大５週までの増加させて毎週を表現
-          d.setTime(date.getTime() + 1000 * 60 * 60 * 24 *
-            ((7 + getDayIndex(day_mix[j].charAt(0)) - date.getDay()) % 7) + week * 7 * 24 * 60 * 60 * 1000
-          );
-          //年末年始のずらしの対応
-          //休止期間なら、今後の日程を１週間ずらす
-          if (areaObj.isBlankDay(d)) {
-            isShift = true;
-          }
-          if (isShift) {
-            d.setTime(d.getTime() + 7 * 24 * 60 * 60 * 1000);
-          }
-          //同じ月の時のみ処理したい
-          if (d.getMonth() != (month - 1) % 12) {
+    // 定期回収の場合
+    if (this.regularFlg == 1) {
+
+      var today = new Date();
+
+      // 12月 +3月　を表現
+      for (var i = 0; i < MaxMonth; i++) {
+
+        var curMonth = today.getMonth() + i;
+        var curYear = today.getFullYear() + Math.floor(curMonth / 12);
+        var month = (curMonth % 12) + 1;
+
+        // 収集が無い月はスキップ
+        if (this.mflag[month - 1] == 0) {
             continue;
-          }
-          //特定の週のみ処理する
-          if (day_mix[j].length > 1) {
-            if (week != day_mix[j].charAt(1) - 1) {
+        }
+        for (var j in day_mix) {
+          //休止期間だったら、今後一週間ずらす。
+          var isShift = false;
+
+          //week=0が第1週目です。
+          for (var week = 0; week < 5; week++) {
+            //4月1日を起点として第n曜日などを計算する。
+            var date = new Date(curYear, month - 1, 1);
+            var d = new Date(date);
+            //コンストラクタでやろうとするとうまく行かなかった。。
+            //
+            //4月1日を基準にして曜日の差分で時間を戻し、最大５週までの増加させて毎週を表現
+            d.setTime(date.getTime() + 1000 * 60 * 60 * 24 *
+              ((7 + getDayIndex(day_mix[j].charAt(0)) - date.getDay()) % 7) + week * 7 * 24 * 60 * 60 * 1000
+            );
+            //年末年始のずらしの対応
+            //休止期間なら、今後の日程を１週間ずらす
+            if (areaObj.isBlankDay(d)) {
+              if (WeekShift) {
+                isShift = true;
+              } else {
+                continue;
+              }
+            }
+            if (isShift) {
+              d.setTime(d.getTime() + 7 * 24 * 60 * 60 * 1000);
+            }
+            //同じ月の時のみ処理したい
+            if (d.getMonth() != (month - 1) % 12) {
               continue;
             }
-          }
+            //特定の週のみ処理する
+            if (day_mix[j].length > 1) {
+              if (week != day_mix[j].charAt(1) - 1) {
+                continue;
+              }
+            }
 
-          day_list.push(d);
+            day_list.push(d);
+          }
         }
+      }
+    } else {
+      // 不定期回収の場合は、そのまま指定された日付をセットする
+      for (var j in day_mix) {
+        var year = parseInt(day_mix[j].substr(0, 4));
+        var month = parseInt(day_mix[j].substr(4, 2)) - 1;
+        var day = parseInt(day_mix[j].substr(6, 2));
+        var d = new Date(year, month, day);
+        day_list.push(d);
       }
     }
     //曜日によっては日付順ではないので最終的にソートする。
@@ -197,6 +276,7 @@ var DescriptionModel = function(data) {
   this.sublabel = data[1];//not used
   this.description = data[2];//not used
   this.styles = data[3];
+  this.background = data[4];
 
 }
 /**
@@ -210,15 +290,25 @@ var TargetRowModel = function(data) {
   this.furigana = data[3];
 }
 
-var windowHeight;
+/**
+ * ゴミ収集日に関する備考を管理するクラスです。
+ * remarks.csvのモデルです。
+ */
+var RemarkModel = function(data) {
+  this.id = data[0];
+  this.text = data[1];
+}
+
+/* var windowHeight; */
 
 $(function() {
-  windowHeight = $(window).height();
+/*   windowHeight = $(window).height(); */
 
   var center_data = new Array();
   var descriptions = new Array();
   var areaModels = new Array();
-  var descriptions = new Array();
+  var remarks = new Array();
+/*   var descriptions = new Array(); */
 
 
   function getSelectedAreaName() {
@@ -232,8 +322,16 @@ $(function() {
   function csvToArray(filename, cb) {
     $.get(filename, function(csvdata) {
       //CSVのパース作業
+<<<<<<< HEAD
       var csvdata = csvdata.replace(/\r/gm, ""),
           line = csvdata.split("\n"),
+=======
+      //CRの解析ミスがあった箇所を修正しました。
+      //以前のコードだとCRが残ったままになります。
+      // var csvdata = csvdata.replace("\r/gm", ""),
+       csvdata = csvdata.replace(/\r/gm, "");
+      var line = csvdata.split("\n"),
+>>>>>>> upstream/master
           ret = [];
       for (var i in line) {
         //空行はスルーする。
@@ -257,9 +355,17 @@ $(function() {
 
         areaModels.push(area);
         //２列目以降の処理
+<<<<<<< HEAD
         for (var r = 2; r < 2 + 4; r++) {
           var trash = new TrashModel(area_days_label[r], row[r]);
           area.trash.push(trash);
+=======
+        for (var r = 2; r < 2 + MaxDescription; r++) {
+          if (area_days_label[r]) {
+            var trash = new TrashModel(area_days_label[r], row[r], remarks);
+            area.trash.push(trash);
+          }
+>>>>>>> upstream/master
         }
       }
 
@@ -306,6 +412,16 @@ $(function() {
 
 
   function createMenuList(after_action) {
+<<<<<<< HEAD
+=======
+    // 備考データを読み込む
+    csvToArray("data/remarks.csv", function(data) {
+      data.shift();
+      for (var i in data) {
+        remarks.push(new RemarkModel(data[i]));
+      }
+    });
+>>>>>>> upstream/master
     csvToArray("data/description.csv", function(data) {
       data.shift();
       for (var i in data) {
@@ -339,16 +455,24 @@ $(function() {
     //TODO Android 2.3以下では見れない（代替の表示も含め）不具合が改善されてない。。
     //参考 http://satussy.blogspot.jp/2011/12/javascript-svg.html
     var ableSVG = (window.SVGAngle !== void 0);
+<<<<<<< HEAD
     ableSVG=false
+=======
+    //var ableSVG = false;  // SVG未使用の場合、descriptionの1項目目を使用
+>>>>>>> upstream/master
     var areaModel = areaModels[row_index];
     var today = new Date();
     //直近の一番近い日付を計算します。
     areaModel.calcMostRect();
     //トラッシュの近い順にソートします。
     areaModel.sortTrash();
-
-    var accordion_height = windowHeight / 4;
-
+    var accordion_height = window.innerHeight / descriptions.length;
+    if(descriptions.length>4){
+      accordion_height = window.innerHeight / 4.1;
+      if (accordion_height>140) {accordion_height = window.innerHeight / descriptions.length;};
+      if (accordion_height<130) {accordion_height=130;};
+    }
+    var styleHTML = "";
     var accordionHTML = "";
     //アコーディオンの分類から対応の計算を行います。
     for (var i in areaModel.trash) {
@@ -356,8 +480,13 @@ $(function() {
 
       for (var d_no in descriptions) {
         var description = descriptions[d_no];
+<<<<<<< HEAD
         if (description.label != trash.label) {
         	continue;
+=======
+       if (description.label != trash.label) {
+          continue;
+>>>>>>> upstream/master
         }
 
           var target_tag = "";
@@ -377,7 +506,8 @@ $(function() {
               target_tag += "<ul>";
             }
 
-            target_tag += "<li>" + target.name + "</li>";
+            target_tag += '<li style="list-style:none;">' + target.name + "</li>";
+            target_tag += '<p class="note">' + target.notice + "</p>";
           }
 
           target_tag += "</ul>";
@@ -397,13 +527,15 @@ $(function() {
             leftDayText = leftDay + "日後";
           }
 
+          styleHTML += '#accordion-group' + d_no + '{background-color:  ' + description.background + ';} ';
+
           accordionHTML +=
             '<div class="accordion-group" id="accordion-group' + d_no + '">' +
             '<div class="accordion-heading">' +
             '<a class="accordion-toggle" style="height:' + accordion_height + 'px" data-toggle="collapse" data-parent="#accordion" href="#collapse' + i + '">' +
             '<div class="left-day">' + leftDayText + '</div>' +
             '<div class="accordion-table" >';
-          if (ableSVG) {
+          if (ableSVG && SVGLabel) {
             accordionHTML += '<img src="' + description.styles + '" alt="' + description.label + '"  />';
           } else {
             accordionHTML += '<p class="text-center">' + description.label + "</p>";
@@ -421,12 +553,14 @@ $(function() {
       }
     }
 
+    $("#accordion-style").html('<!-- ' + styleHTML + ' -->');
+
     var accordion_elm = $("#accordion");
     accordion_elm.html(accordionHTML);
 
     $('html,body').animate({scrollTop: 0}, 'fast');
 
-    //アコーディオンのラベル部分をクリックしたら  
+    //アコーディオンのラベル部分をクリックしたら
     $(".accordion-body").on("shown.bs.collapse", function() {
       var body = $('body');
       var accordion_offset = $($(this).parent().get(0)).offset().top;
@@ -434,7 +568,7 @@ $(function() {
         scrollTop: accordion_offset
       }, 50);
     });
-    //アコーディオンの非表示部分をクリックしたら  
+    //アコーディオンの非表示部分をクリックしたら
     $(".accordion-body").on("hidden.bs.collapse", function() {
       if ($(".in").length == 0) {
         $("html, body").scrollTop(0);
@@ -444,11 +578,13 @@ $(function() {
 
   function onChangeSelect(row_index) {　
     if (row_index == -1) {
+      $("#accordion").html("");
+      setSelectedAreaName("");
       return;
     }
     setSelectedAreaName(areaModels[row_index].label);
 
-    if ($("#accordion").children().length == 0) {
+    if ($("#accordion").children().length === 0 && descriptions.length === 0) {
 
       createMenuList(function() {
         updateData(row_index);
@@ -476,7 +612,7 @@ $(function() {
 
   //-----------------------------------
   //位置情報をもとに地域を自動的に設定する処理です。
-  //これから下は現在、利用されておりません。 
+  //これから下は現在、利用されておりません。
   //将来的に使うかもしれないので残してあります。
   $("#gps_area").click(function() {
     navigator.geolocation.getCurrentPosition(function(position) {
