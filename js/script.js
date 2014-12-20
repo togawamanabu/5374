@@ -569,6 +569,9 @@ $(function() {
     } else {
       updateData(row_index);
     }
+
+    // ical link update
+    $("#ical_link").attr("href", "http://cal5374.herokuapp.com/calendar.ics?site=" + window.location.href + "&area=" + $("#select_area option:selected").text());
   }
 
 
